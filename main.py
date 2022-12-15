@@ -9,35 +9,38 @@ from PyQt5.QtWidgets import (QWidget, QApplication, QTabWidget,
 from PyQt5.QtGui import QPalette
 from PyQt5.QtCore import QRect
 from manager import *
+from order_sells import *
 from tour import *
 from contacts import *
 from clients import *
 from order import *
+from order_payment import *
 
 
 class MyForm(QWidget):
     def __init__(self):
         super().__init__()
         self.edit_row = 0
+        self.conn = None
         self.load_db()
         self.setupUi()
     
     def load_db(self):
         is_new = not os.path.exists('data.db')
-        conn = sqlite3.connect('data.db')
-        conn.execute('''
+        self.conn = sqlite3.connect('data.db')
+        self.conn.execute('''
             create table if not exists locations(
                 id integer not null primary key,
                 name nvarchar(100) not null
             );''')
-        conn.execute('''
+        self.conn.execute('''
             create table if not exists managers (
                 id integer not null primary key,
                 name nvarchar(50) not null,
                 phone nvarchar(20),
                 email nvarchar(30)
             )''')
-        conn.execute('''
+        self.conn.execute('''
             create table if not exists hotels(
                 id integer not null primary key,
                 name nvarchar(200) not null,
@@ -49,14 +52,14 @@ class MyForm(QWidget):
                 foreign key(location_id) references locations(id) on delete set default
             )
         ''')
-        conn.execute('''
+        self.conn.execute('''
             create table if not exists contacts(
                 id integer not null primary key,
                 name nvarchar(60) not null,
                 phone nvarchar(60) not null
             )
         ''')
-        conn.execute('''
+        self.conn.execute('''
             create table if not exists clients(
                 id integer not null primary key,
                 contact_id integer not null default 1,
@@ -65,7 +68,7 @@ class MyForm(QWidget):
                 foreign key(contact_id) references contacts(id) on delete set default
             )
         ''')
-        conn.execute('''
+        self.conn.execute('''
             create table if not exists tours(
                 id integer primary key not null,
                 hotel_id integer default 1,
@@ -77,18 +80,19 @@ class MyForm(QWidget):
                 foreign key (hotel_id) references hotels(id) on delete set default
             )
         ''')
-        
-        conn.execute('''
+        self.conn.execute('''
             create table if not exists orders(
                 id integer not null primary key,
                 client_id integer not null default 1,
                 payment_type nvarchar(20),
                 total real not null,
+                result nvarchar(20) not null default "Действует",
+                confirmed_book nvarchar(3) not null default "Нет",
                 foreign key (client_id) references clients(id) on delete set default
             )
-        ''') 
+        ''')
         
-        conn.execute('''
+        self.conn.execute('''
             create table if not exists order_units(
                 id integer not null primary key,
                 tour_id integer not null default 1,
@@ -102,28 +106,27 @@ class MyForm(QWidget):
         ''')
 
         if is_new:
-            conn.execute(f'''
+            self.conn.execute(f'''
                 insert into managers(name, phone, email)
                 values("{IDN}", "{IDN}", "{IDN}")
             ''')
-            conn.execute(f'''
+            self.conn.execute(f'''
                 insert into locations(name)
                 values("{IDN}")
             ''')
-            conn.execute(f'''
+            self.conn.execute(f'''
                 insert into contacts(name, phone)
                 values("{IDN}", "{IDN}")
             ''')
-            conn.execute(f'''
+            self.conn.execute(f'''
                 insert into hotels(name, manager_id, contact_phone, location_id, description)
                 values("{IDN}", 1, "{IDN}", 1, "")
             ''')
 
-        conn.commit()
-        self.conn = conn
+        self.conn.commit()
 
     def table_with_identity(self, tabname):
-        if tabname in ['tours', 'orders']:
+        if tabname in ['tours', 'orders', 'orders_payment', 'orders_sells']:
             return False
         return True
 
@@ -144,12 +147,16 @@ class MyForm(QWidget):
         elif table_name == 'contacts':
             r = '''select name, phone from contacts as c'''
         elif table_name == 'orders':
-            r = '''select c.name, payment_type, total from orders as o join clients as c on c.id=client_id'''
+            r = '''select c.name, payment_type, total, o.result, o.confirmed_book from orders as o join clients as c on c.id=client_id'''
+        elif table_name == 'orders_payment':
+            r = '''select row_number() over (order by o.id), o.total, o.result from orders as o'''
+        elif table_name == 'orders_sells':
+            r = '''select row_number() over (order by o.id), o.total, o.result, o.confirmed_book from orders as o'''
+
         if idx is None and self.table_with_identity(table_name):
             r += f' where {table_name[0]}.id != 1'
         elif idx is not None:
             r += f' where {table_name[0]}.id = {idx}'
-        
         return r
 
     def fill_table(self, table_name):
@@ -166,9 +173,9 @@ class MyForm(QWidget):
     
     def setupUi(self):
         self.setWindowTitle('Отели')
-        self.setMinimumSize(500, 300)
-        self.setMaximumSize(800, 600)
-        self.resize(700, 400)
+        self.setMinimumSize(950, 300)
+        self.setMaximumSize(1200, 600)
+        self.resize(950, 400)
         layout = QVBoxLayout()
         layout.setContentsMargins(4, 4, 4, 7)
         tabwidget = QTabWidget()
@@ -217,38 +224,64 @@ class MyForm(QWidget):
         tabwidget.addTab(self.tab6, 'Клиенты')
 
         self.tab7 = QTableWidget()
-        self.tab7.setColumnCount(3)
-        cols7 = ['Клиент', 'Тип оплаты', 'Стоимость']
+        self.tab7.setColumnCount(5)
+        cols7 = ['Клиент', 'Тип оплаты', 'Стоимость', 'Статус', 'Бронь подтверждена']
         self.tab7.setHorizontalHeaderLabels(cols7)
         self.resize_cols(self.tab7, cols7)
         tabwidget.addTab(self.tab7, 'Заказы')
 
+        self.tab8 = QTableWidget()
+        self.tab8.setColumnCount(3)
+        cols8 = ['Номер заказа', 'Стоимость', 'Статус']
+        self.tab8.setHorizontalHeaderLabels(cols8)
+        self.resize_cols(self.tab8, cols8)
+        tabwidget.addTab(self.tab8, 'Оплата туров')
+
+        self.tab9 = QTableWidget()
+        self.tab9.setColumnCount(4)
+        cols9 = ['Номер заказа', 'Стоимость', 'Статус', 'Бронь подтверждена']
+        self.tab9.setHorizontalHeaderLabels(cols9)
+        self.resize_cols(self.tab9, cols9)
+        tabwidget.addTab(self.tab9, 'Продажа туров')
+
         self.tabwidget = tabwidget
+        self.tabwidget.currentChanged.connect(self.tab_changed)
+
         bottom = QHBoxLayout()
-        newbutt = QPushButton()
-        newbutt.clicked.connect(self.create)
-        newbutt.setText('Создать')
-        deletebutt = QPushButton()
-        deletebutt.clicked.connect(self.delete)
-        deletebutt.setText('Удалить')
-        editbutt = QPushButton()
-        editbutt.clicked.connect(self.edit)
-        editbutt.setText('Редактировать')
-        for butt in [newbutt, editbutt, deletebutt]:
+        self.newbutt = QPushButton()
+        self.newbutt.clicked.connect(self.create)
+        self.newbutt.setText('Создать')
+        self.deletebutt = QPushButton()
+        self.deletebutt.clicked.connect(self.delete)
+        self.deletebutt.setText('Удалить')
+        self.editbutt = QPushButton()
+        self.editbutt.clicked.connect(self.edit)
+        self.editbutt.setText('Редактировать')
+        for butt in [self.newbutt, self.editbutt, self.deletebutt]:
             butt.setFixedWidth(105)
             butt.setFixedHeight(23)
             bottom.addWidget(butt)
         layout.addLayout(bottom)
         self.setLayout(layout)
         self.dialogs = [HotelDialog, ManagerDialog, LocationDialog,
-            TourDialog, ContactDialog, ClientDialog, OrderDialog]
+            TourDialog, ContactDialog, ClientDialog, OrderDialog, OrderPaymentDialog, OrderSellsDialog]
         self.tabnames = ['hotels', 'managers', 'locations',
-            'tours', 'contacts', 'clients', 'orders']
+            'tours', 'contacts', 'clients', 'orders', 'orders_payment', 'orders_sells']
+
         for i, name in enumerate(self.tabnames):
             tab = tabwidget.widget(i)
             tab.setEditTriggers(QAbstractItemView.NoEditTriggers)
             tab.doubleClicked.connect(self.dbclick)
             self.fill_table(name)
+
+    def tab_changed(self):
+        tab = self.tabnames[self.tabwidget.currentIndex()]
+        if tab in ['orders_payment', 'orders_sells']:
+            self.newbutt.setEnabled(False)
+            self.deletebutt.setEnabled(False)
+        else:
+            self.newbutt.setEnabled(True)
+            self.deletebutt.setEnabled(True)
 
     def get_tab_by_tabname(self, tabname):
         return self.tabwidget.widget(self.tabnames.index(tabname))
@@ -260,6 +293,8 @@ class MyForm(QWidget):
     def delete(self):
         curr = self.tabwidget.currentIndex()
         table_name = self.tabnames[curr]
+        if table_name in ['orders_sells', 'orders_payment']:
+            table_name = 'orders'
         table = self.tabwidget.widget(curr)
         fr = get_focused_row(table)
         if fr is None:
@@ -318,6 +353,9 @@ class MyForm(QWidget):
         req = self.content_request(dbtab, idx=idx)
         data = self.conn.execute(req).fetchone()
         self.fill_row_with(table, row, data)
+
+    def update_table(self, dbtab):
+        self.fill_table(dbtab)
 
     def add_last(self, dbtab):
         table = self.get_tab_by_tabname(dbtab)

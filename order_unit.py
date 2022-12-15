@@ -111,7 +111,7 @@ class OrderUnitDialog(object):
 
         for sb in self.doubleSpinBox, self.doubleSpinBox_2:
             sb.setMinimum(0)
-            sb.setMaximum(1e10)
+            sb.setMaximum(1e15)
         
         for sb in self.spinBox, self.doubleSpinBox:
             sb.valueChanged.connect(self.update_total_price)

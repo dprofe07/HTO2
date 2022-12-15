@@ -114,7 +114,7 @@ class OrderDialog(object):
         self.doubleSpinBox = QtWidgets.QDoubleSpinBox(self.horizontalLayoutWidget_2)
         self.doubleSpinBox.setObjectName("doubleSpinBox")
         self.doubleSpinBox.setMinimum(0)
-        self.doubleSpinBox.setMaximum(1_000_000)
+        self.doubleSpinBox.setMaximum(1e15)
         self.formLayout_2.setWidget(0, QtWidgets.QFormLayout.FieldRole, self.doubleSpinBox)
         self.horizontalLayout_2.addLayout(self.formLayout_2)
         self.pushButton_2 = QtWidgets.QPushButton(self.horizontalLayoutWidget_2)
@@ -167,8 +167,8 @@ class OrderDialog(object):
 
 
     def get_total(self):
-        prices = self.conn.execute(f'select price from order_units where order_id = {self.idx}').fetchall()
-        return sum(p[0] for p in prices)
+        prices = self.conn.execute(f'select price, people from order_units where order_id = {self.idx}').fetchall()
+        return sum(p[0] * p[1] for p in prices)
 
     def update_total(self):
         total = self.get_total()
