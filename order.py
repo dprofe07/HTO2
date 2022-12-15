@@ -33,11 +33,15 @@ class OrderDialog(object):
                 payment_type="{payment_type}", total={total} where id={self.idx}''')
             self.conn.commit()
             self.parent.update_at_row('orders', self.row)
+            self.parent.update_at_row('orders_payment', self.row)
+            self.parent.update_at_row('orders_sells', self.row)
         else:
             self.conn.execute(f'''insert into orders(id, payment_type, client_id, total) 
                 values({self.idx}, "{payment_type}", {client_id}, {total})''')
             self.conn.commit()
             self.parent.add_last('orders')
+            self.parent.add_last('orders_payment')
+            self.parent.add_last('orders_sells')
             self.row = 0
         self.win.close()
 
