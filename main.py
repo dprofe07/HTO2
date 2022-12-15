@@ -122,6 +122,10 @@ class MyForm(QWidget):
                 insert into hotels(name, manager_id, contact_phone, location_id, description)
                 values("{IDN}", 1, "{IDN}", 1, "")
             ''')
+            self.conn.execute(f'''
+                insert into clients (id, contact_id, name, type)
+                values (1, 1, "{IDN}", "{IDN}") 
+            ''')
 
         self.conn.commit()
 
